@@ -1,0 +1,94 @@
+name: Ýygna (Android + Windows)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Android APK
+        shell: bash
+        run: |
+          chmod +x gradlew
+          set -o pipefail
+          ./gradlew :android:assembleRelease :keygen-android:assembleRelease --no-daemon --stacktrace 2>&1 | tee build-android.log
+      - name: Faýllary taýýarla
+        shell: bash
+        run: |
+          mkdir -p out
+          cp android/build/outputs/apk/release/*.apk out/SowdaHasap.apk
+          cp keygen/android/build/outputs/apk/release/*.apk out/SowdaHasap-Acar.apk
+      - uses: actions/upload-artifact@v4
+        with: { name: android, path: out/ }
+      - name: Ýalňyşlyk logy
+        if: failure()
+        shell: bash
+        run: |
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          cp build-android.log "$RUNNER_TEMP/" || echo "log yok" > "$RUNNER_TEMP/build-android.log"
+          git checkout --orphan logs-tmp && git rm -rfq . && cp "$RUNNER_TEMP/build-android.log" .
+          git add build-android.log && git commit -qm "android log $GITHUB_RUN_ID" && git push -f origin HEAD:ci-logs-android
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Windows programmalary
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew :desktop:createDistributable :keygen-desktop:createDistributable --no-daemon --stacktrace 2>&1 | tee build-windows.log
+      - name: Gurnaýjy (exe)
+        id: installer
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew :desktop:packageExe :keygen-desktop:packageExe --no-daemon 2>&1 | tee build-installer.log
+      - name: Faýllary taýýarla
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Compress-Archive -Path desktop/build/compose/binaries/main/app/SowdaHasap -DestinationPath out/SowdaHasap-Windows-portable.zip
+          Compress-Archive -Path keygen/desktop/build/compose/binaries/main/app/SowdaHasapKeygen -DestinationPath out/SowdaHasap-Acar-Windows-portable.zip
+          Get-ChildItem -Recurse -Filter *.exe desktop/build/compose/binaries/main/exe -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName out/SowdaHasap-Setup.exe }
+          Get-ChildItem -Recurse -Filter *.exe keygen/desktop/build/compose/binaries/main/exe -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName out/SowdaHasap-Acar-Setup.exe }
+          Get-ChildItem out
+      - uses: actions/upload-artifact@v4
+        with: { name: windows, path: out/ }
+      - name: Ýalňyşlyk logy
+        if: failure() || steps.installer.outcome == 'failure'
+        shell: bash
+        run: |
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          mkdir -p "$RUNNER_TEMP/l" && cp build-*.log "$RUNNER_TEMP/l/" 2>/dev/null || true
+          git checkout --orphan logs-tmp && git rm -rfq . && (cp "$RUNNER_TEMP"/l/* . 2>/dev/null || echo "log yok" > none.log)
+          git add -A && git commit -qm "windows log $GITHUB_RUN_ID" && git push -f origin HEAD:ci-logs-windows
+
+  release:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - name: Releases sahypasyna goý
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la dist
+          gh release delete latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create latest dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Söwda Hasap — iň täze wersiýa" \
+            --notes "Android: SowdaHasap.apk, açar generatory: SowdaHasap-Acar.apk. Windows: SowdaHasap-Setup.exe (ýa-da portable zip)."

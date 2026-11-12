@@ -1,6 +1,9 @@
+.gradle/
+build/
+*/build/
+local.properties
+.idea/
+*.iml
 private.pem
 server/data/
-android/.gradle/
-android/build/
-android/app/build/
-android/local.properties
+.kotlin/
