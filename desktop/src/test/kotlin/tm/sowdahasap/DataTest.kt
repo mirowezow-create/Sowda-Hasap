@@ -63,7 +63,7 @@ class DataTest {
         assertEquals(ItemState.ARCHIVED, p.state)
         assertEquals(false, p.deleted)
         assertEquals("san", p.unit)
-        assertEquals("123", db.dao().productByBarcode("123")?.id)
+        assertEquals("p1", db.dao().productByBarcode("123")?.id)
         val inv = db.dao().invoice("i1")!!
         assertEquals(InvoiceKind.SALE, inv.kind)
         assertEquals("main", inv.cashbookId)
