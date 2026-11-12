@@ -1,0 +1,3 @@
+-keepattributes *Annotation*, InnerClasses
+-keep,includedescriptorclasses class tm.sowdahasap.**$$serializer { *; }
+-keepclassmembers class tm.sowdahasap.** { *** Companion; }
