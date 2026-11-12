@@ -22,7 +22,7 @@ import java.util.concurrent.Executors
  * Telefonlar we beýleki kompýuterler Wi-Fi arkaly şu ýere birigýär.
  */
 object LanServer {
-    private val TABLES = listOf("warehouses", "products", "stockMoves", "customers", "invoices", "invoiceLines", "payments", "users")
+    private val TABLES = listOf("warehouses", "products", "stockMoves", "customers", "invoices", "invoiceLines", "payments", "users", "units", "productUnits", "barcodes", "cashbooks")
     private data class Entry(val row: JsonObject, val srv: Long)
 
     private var server: HttpServer? = null

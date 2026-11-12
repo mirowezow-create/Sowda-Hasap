@@ -41,7 +41,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Exe, TargetFormat.Msi)
             packageName = "SowdaHasap"
-            packageVersion = "1.1.0"
+            packageVersion = "1.2.0"
             description = "Söwda Hasap"
             vendor = "Sowda Hasap"
             modules("java.sql", "jdk.httpserver", "jdk.crypto.ec", "java.naming", "jdk.unsupported")
@@ -55,4 +55,12 @@ compose.desktop {
             }
         }
     }
+}
+
+dependencies {
+    testImplementation(kotlin("test"))
+}
+
+tasks.test {
+    useJUnitPlatform()
 }

@@ -20,7 +20,7 @@ jobs:
         run: |
           chmod +x gradlew
           set -o pipefail
-          ./gradlew :android:assembleRelease :keygen-android:assembleRelease --no-daemon --stacktrace 2>&1 | tee build-android.log
+          ./gradlew :desktop:test :android:assembleRelease :keygen-android:assembleRelease --no-daemon --stacktrace 2>&1 | tee build-android.log
       - name: Faýllary taýýarla
         shell: bash
         run: |
@@ -35,6 +35,7 @@ jobs:
         run: |
           git config user.name ci && git config user.email ci@users.noreply.github.com
           cp build-android.log "$RUNNER_TEMP/" || echo "log yok" > "$RUNNER_TEMP/build-android.log"
+          for f in desktop/build/test-results/test/*.xml; do cat "$f" >> "$RUNNER_TEMP/build-android.log" 2>/dev/null; done
           git checkout --orphan logs-tmp && git rm -rfq . && cp "$RUNNER_TEMP/build-android.log" .
           git add build-android.log && git commit -qm "android log $GITHUB_RUN_ID" && git push -f origin HEAD:ci-logs-android
 

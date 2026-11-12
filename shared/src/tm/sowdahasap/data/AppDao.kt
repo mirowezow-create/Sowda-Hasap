@@ -13,7 +13,7 @@ private const val PRODUCT_STOCK_SELECT = """
 
 private const val CUSTOMER_DEBT_SELECT = """
     SELECT c.*,
-        COALESCE((SELECT SUM(i.total) FROM invoices i
+        COALESCE((SELECT SUM(CASE i.kind WHEN 'PURCHASE' THEN -i.total WHEN 'RETURN_IN' THEN -i.total WHEN 'TRANSFER' THEN 0 ELSE i.total END) FROM invoices i
             WHERE i.customerId = c.id AND i.status = 'POSTED' AND i.deleted = 0), 0)
       - COALESCE((SELECT SUM(p.amount) FROM payments p
             WHERE p.customerId = c.id AND p.deleted = 0), 0) AS debt
@@ -36,8 +36,14 @@ interface AppDao {
     suspend fun upsertWarehouse(w: Warehouse)
 
     // ---------- Harytlar ----------
-    @Query("$PRODUCT_STOCK_SELECT AND (p.name LIKE '%' || :q || '%' OR p.barcode LIKE :q || '%') ORDER BY p.name")
-    fun productsWithStock(q: String, wh: String?): Flow<List<ProductStock>>
+    @Query("""$PRODUCT_STOCK_SELECT AND p.state IN (:states) AND (p.name LIKE '%' || :q || '%' OR p.barcode LIKE :q || '%'
+        OR p.code LIKE '%' || :q || '%'
+        OR EXISTS(SELECT 1 FROM barcodes b WHERE b.productId = p.id AND b.deleted = 0 AND b.code LIKE :q || '%')) ORDER BY p.name""")
+    fun productsWithStockIn(q: String, wh: String?, states: List<String>): Flow<List<ProductStock>>
+
+    /** Diňe ulanylýan harytlar (faktura we saýlaw üçin) */
+    fun productsWithStock(q: String, wh: String?): Flow<List<ProductStock>> =
+        productsWithStockIn(q, wh, listOf(ItemState.ACTIVE))
 
     @Query("SELECT * FROM ($PRODUCT_STOCK_SELECT) WHERE minStock > 0 AND stock <= minStock ORDER BY name")
     suspend fun lowStock(wh: String?): List<ProductStock>
@@ -45,11 +51,70 @@ interface AppDao {
     @Query("SELECT * FROM products WHERE id = :id")
     suspend fun product(id: String): Product?
 
-    @Query("SELECT * FROM products WHERE barcode = :code AND deleted = 0 LIMIT 1")
+    @Query("""
+        SELECT * FROM products WHERE deleted = 0 AND (barcode = :code OR code = :code
+            OR id IN (SELECT productId FROM barcodes WHERE code = :code AND deleted = 0)) LIMIT 1
+    """)
     suspend fun productByBarcode(code: String): Product?
+
+    @Query("SELECT * FROM barcodes WHERE code = :code AND deleted = 0 LIMIT 1")
+    suspend fun barcodeByCode(code: String): Barcode?
+
+    @Query("SELECT * FROM barcodes WHERE productId = :productId AND deleted = 0")
+    suspend fun barcodesOf(productId: String): List<Barcode>
+
+    @Query("SELECT * FROM barcodes WHERE productId = :productId")
+    suspend fun allBarcodesOf(productId: String): List<Barcode>
+
+    @Query("SELECT * FROM product_units WHERE productId = :productId AND deleted = 0 ORDER BY factor")
+    suspend fun unitsOf(productId: String): List<ProductUnit>
+
+    @Query("SELECT * FROM product_units WHERE productId = :productId")
+    suspend fun allUnitsOf(productId: String): List<ProductUnit>
+
+    @Query("SELECT code FROM products WHERE code LIKE 'H-%'")
+    suspend fun productCodes(): List<String>
+
+    @Query("SELECT code FROM customers WHERE code LIKE 'M-%'")
+    suspend fun customerCodes(): List<String>
+
+    @Upsert suspend fun upsertBarcodes(list: List<Barcode>)
+    @Upsert suspend fun upsertProductUnits(list: List<ProductUnit>)
+
+    // ---------- Ölçegler ----------
+    @Query("SELECT * FROM units WHERE deleted = 0 ORDER BY name")
+    fun units(): Flow<List<UnitDef>>
+
+    @Query("SELECT COUNT(*) FROM units WHERE deleted = 0")
+    suspend fun unitCount(): Int
+
+    @Upsert suspend fun upsertUnit(u: UnitDef)
+
+    // ---------- Depderler (kassa) ----------
+    @Query("SELECT * FROM cashbooks WHERE deleted = 0 ORDER BY name")
+    fun cashbooks(): Flow<List<Cashbook>>
+
+    @Query("SELECT COUNT(*) FROM cashbooks WHERE deleted = 0")
+    suspend fun cashbookCount(): Int
+
+    @Upsert suspend fun upsertCashbook(c: Cashbook)
+
+    @Query("SELECT cashbookId, COALESCE(SUM(amount), 0) AS balance FROM payments WHERE deleted = 0 GROUP BY cashbookId")
+    fun cashBalances(): Flow<List<CashBalance>>
+
+    @Query("""
+        SELECT p.*, c.name AS customerName, b.name AS cashbookName FROM payments p
+        LEFT JOIN customers c ON c.id = p.customerId LEFT JOIN cashbooks b ON b.id = p.cashbookId
+        WHERE p.deleted = 0 AND (:cb IS NULL OR p.cashbookId = :cb) AND p.createdAt BETWEEN :from AND :to
+        ORDER BY p.createdAt DESC LIMIT 1000
+    """)
+    fun cashRows(cb: String?, from: Long, to: Long): Flow<List<CashRow>>
 
     @Query("SELECT COALESCE(SUM(qty), 0) FROM stock_moves WHERE productId = :productId AND warehouseId = :wh AND deleted = 0")
     suspend fun stockOf(productId: String, wh: String): Double
+
+    @Query("SELECT COALESCE(SUM(qty), 0) FROM stock_moves WHERE productId = :id AND deleted = 0")
+    suspend fun totalStock(id: String): Double
 
     @Upsert
     suspend fun upsertProduct(p: Product)
@@ -72,14 +137,28 @@ interface AppDao {
     suspend fun upsertMoves(list: List<StockMove>)
 
     // ---------- Müşderiler ----------
-    @Query("$CUSTOMER_DEBT_SELECT AND (c.name LIKE '%' || :q || '%' OR c.phone LIKE '%' || :q || '%') ORDER BY c.name")
-    fun customersWithDebt(q: String): Flow<List<CustomerBalance>>
+    @Query("$CUSTOMER_DEBT_SELECT AND c.state IN (:states) AND (c.name LIKE '%' || :q || '%' OR c.phone LIKE '%' || :q || '%' OR c.code LIKE '%' || :q || '%') ORDER BY c.name")
+    fun customersWithDebtIn(q: String, states: List<String>): Flow<List<CustomerBalance>>
+
+    fun customersWithDebt(q: String): Flow<List<CustomerBalance>> = customersWithDebtIn(q, listOf(ItemState.ACTIVE))
 
     @Query("SELECT * FROM ($CUSTOMER_DEBT_SELECT) WHERE debt > 0 ORDER BY debt DESC")
     suspend fun debtors(): List<CustomerBalance>
 
-    @Query("SELECT * FROM customers WHERE deleted = 0 ORDER BY name")
+    @Query("SELECT * FROM customers WHERE deleted = 0 AND state = 'ACTIVE' ORDER BY name")
     fun customers(): Flow<List<Customer>>
+
+    @Query("SELECT COUNT(*) FROM invoices WHERE customerId = :id AND deleted = 0")
+    suspend fun invoiceCountOfCustomer(id: String): Int
+
+    @Query("SELECT COUNT(*) FROM payments WHERE customerId = :id AND deleted = 0")
+    suspend fun paymentCountOfCustomer(id: String): Int
+
+    @Query("SELECT COUNT(*) FROM stock_moves WHERE productId = :id AND deleted = 0")
+    suspend fun moveCountOfProduct(id: String): Int
+
+    @Query("SELECT COUNT(*) FROM invoice_lines WHERE productId = :id AND deleted = 0")
+    suspend fun lineCountOfProduct(id: String): Int
 
     @Query("SELECT * FROM customers WHERE id = :id")
     fun customerFlow(id: String): Flow<Customer?>
@@ -88,7 +167,7 @@ interface AppDao {
     suspend fun customer(id: String): Customer?
 
     @Query("""
-        SELECT COALESCE((SELECT SUM(total) FROM invoices WHERE customerId = :id AND status = 'POSTED' AND deleted = 0), 0)
+        SELECT COALESCE((SELECT SUM(CASE i.kind WHEN 'PURCHASE' THEN -i.total WHEN 'RETURN_IN' THEN -i.total WHEN 'TRANSFER' THEN 0 ELSE i.total END) FROM invoices i WHERE i.customerId = :id AND i.status = 'POSTED' AND i.deleted = 0), 0)
              - COALESCE((SELECT SUM(amount) FROM payments WHERE customerId = :id AND deleted = 0), 0)
     """)
     fun debtOf(id: String): Flow<Long>
@@ -100,11 +179,11 @@ interface AppDao {
     @Query("""
         SELECT i.*, c.name AS customerName FROM invoices i LEFT JOIN customers c ON c.id = i.customerId
         WHERE i.deleted = 0 AND (:status IS NULL OR i.status = :status)
-        ORDER BY i.createdAt DESC LIMIT 500
+        ORDER BY i.createdAt DESC LIMIT 1000
     """)
     fun invoices(status: String?): Flow<List<InvoiceRow>>
 
-    @Query("SELECT * FROM invoices WHERE customerId = :customerId AND status = 'POSTED' AND deleted = 0 ORDER BY createdAt DESC")
+    @Query("SELECT * FROM invoices WHERE customerId = :customerId AND status = 'POSTED' AND kind != 'TRANSFER' AND deleted = 0 ORDER BY createdAt DESC")
     fun postedInvoicesOf(customerId: String): Flow<List<Invoice>>
 
     @Query("SELECT * FROM invoices WHERE id = :id")
@@ -148,41 +227,42 @@ interface AppDao {
     // ---------- Hasabatlar ----------
     @Query("""
         SELECT strftime('%Y-%m-%d', createdAt / 1000, 'unixepoch', 'localtime') AS day, SUM(total) AS total
-        FROM invoices WHERE status = 'POSTED' AND deleted = 0 AND createdAt BETWEEN :from AND :to
+        FROM invoices WHERE kind = 'SALE' AND status = 'POSTED' AND deleted = 0 AND createdAt BETWEEN :from AND :to
         GROUP BY day ORDER BY day
     """)
     suspend fun salesByDay(from: Long, to: Long): List<DaySum>
 
     @Query("""
-        SELECT l.productName AS productName, SUM(l.qty) AS qty, CAST(SUM(l.qty * l.price) AS INTEGER) AS total
+        SELECT l.productName AS productName, SUM(l.qty * l.factor) AS qty, CAST(SUM(l.qty * l.price) AS INTEGER) AS total
         FROM invoice_lines l JOIN invoices i ON i.id = l.invoiceId
-        WHERE i.status = 'POSTED' AND i.deleted = 0 AND l.deleted = 0 AND i.createdAt BETWEEN :from AND :to
+        WHERE i.kind = 'SALE' AND i.status = 'POSTED' AND i.deleted = 0 AND l.deleted = 0 AND i.createdAt BETWEEN :from AND :to
         GROUP BY l.productId ORDER BY total DESC LIMIT 10
     """)
     suspend fun topProducts(from: Long, to: Long): List<TopProduct>
 
-    @Query("SELECT COALESCE(SUM(total), 0) FROM invoices WHERE status = 'POSTED' AND deleted = 0 AND createdAt BETWEEN :from AND :to")
+    @Query("SELECT COALESCE(SUM(total), 0) FROM invoices WHERE kind = 'SALE' AND status = 'POSTED' AND deleted = 0 AND createdAt BETWEEN :from AND :to")
     suspend fun salesTotal(from: Long, to: Long): Long
 
-    @Query("SELECT COUNT(*) FROM invoices WHERE status = 'POSTED' AND deleted = 0 AND createdAt BETWEEN :from AND :to")
+    @Query("SELECT COUNT(*) FROM invoices WHERE kind = 'SALE' AND status = 'POSTED' AND deleted = 0 AND createdAt BETWEEN :from AND :to")
     suspend fun invoiceCount(from: Long, to: Long): Int
 
     @Query("""
         SELECT CAST(COALESCE(SUM(l.qty * (l.price - l.cost)), 0) AS INTEGER)
         FROM invoice_lines l JOIN invoices i ON i.id = l.invoiceId
-        WHERE i.status = 'POSTED' AND i.deleted = 0 AND l.deleted = 0 AND i.createdAt BETWEEN :from AND :to
+        WHERE i.kind = 'SALE' AND i.status = 'POSTED' AND i.deleted = 0 AND l.deleted = 0 AND i.createdAt BETWEEN :from AND :to
     """)
     suspend fun grossProfit(from: Long, to: Long): Long
 
-    @Query("SELECT COALESCE(SUM(discount), 0) FROM invoices WHERE status = 'POSTED' AND deleted = 0 AND createdAt BETWEEN :from AND :to")
+    @Query("SELECT COALESCE(SUM(discount), 0) FROM invoices WHERE kind = 'SALE' AND status = 'POSTED' AND deleted = 0 AND createdAt BETWEEN :from AND :to")
     suspend fun discountTotal(from: Long, to: Long): Long
 
-    @Query("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE deleted = 0 AND createdAt BETWEEN :from AND :to")
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE deleted = 0 AND amount > 0 AND createdAt BETWEEN :from AND :to")
     suspend fun paymentsTotal(from: Long, to: Long): Long
 
     @Query("""
-        SELECT COALESCE((SELECT SUM(total) FROM invoices WHERE status = 'POSTED' AND deleted = 0 AND customerId IS NOT NULL), 0)
-             - COALESCE((SELECT SUM(amount) FROM payments WHERE deleted = 0), 0)
+        SELECT COALESCE((SELECT SUM(CASE i.kind WHEN 'PURCHASE' THEN -i.total WHEN 'RETURN_IN' THEN -i.total WHEN 'TRANSFER' THEN 0 ELSE i.total END) FROM invoices i WHERE i.status = 'POSTED' AND i.deleted = 0
+                    AND i.customerId IS NOT NULL AND i.customerId != ''), 0)
+             - COALESCE((SELECT SUM(amount) FROM payments WHERE deleted = 0 AND customerId != ''), 0)
     """)
     suspend fun totalDebt(): Long
 
@@ -202,6 +282,12 @@ interface AppDao {
     @Upsert suspend fun upsertInvoices(list: List<Invoice>)
     @Upsert suspend fun upsertPayments(list: List<Payment>)
     @Upsert suspend fun upsertUsers(list: List<User>)
+    @Query("SELECT * FROM units WHERE updatedAt > :since") suspend fun chUnits(since: Long): List<UnitDef>
+    @Query("SELECT * FROM product_units WHERE updatedAt > :since") suspend fun chProductUnits(since: Long): List<ProductUnit>
+    @Query("SELECT * FROM barcodes WHERE updatedAt > :since") suspend fun chBarcodes(since: Long): List<Barcode>
+    @Query("SELECT * FROM cashbooks WHERE updatedAt > :since") suspend fun chCashbooks(since: Long): List<Cashbook>
+    @Upsert suspend fun upsertUnits(list: List<UnitDef>)
+    @Upsert suspend fun upsertCashbooks(list: List<Cashbook>)
 
     // ---------- Ätiýaçlykdan dikeltmek ----------
     @Query("DELETE FROM warehouses") suspend fun clearWarehouses()
@@ -212,5 +298,9 @@ interface AppDao {
     @Query("DELETE FROM invoice_lines") suspend fun clearLines()
     @Query("DELETE FROM payments") suspend fun clearPayments()
     @Query("DELETE FROM users") suspend fun clearUsers()
+    @Query("DELETE FROM units") suspend fun clearUnits()
+    @Query("DELETE FROM product_units") suspend fun clearProductUnits()
+    @Query("DELETE FROM barcodes") suspend fun clearBarcodes()
+    @Query("DELETE FROM cashbooks") suspend fun clearCashbooks()
 }
 

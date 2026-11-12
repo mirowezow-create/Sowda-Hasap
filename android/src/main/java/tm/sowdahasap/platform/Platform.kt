@@ -96,6 +96,8 @@ object Platform {
         context.startActivity(Intent.createChooser(intent, "Paýlaş").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
+    fun exitApp() { activity?.finishAffinity() }
+
     // ---------- Serwer (diňe Windows) ----------
     fun startServer(port: Int, token: String): String? = "Diňe Windows-da"
     fun stopServer() {}

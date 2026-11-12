@@ -17,7 +17,7 @@ const TOKEN = process.env.SYNC_TOKEN || '';
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const LICENSES_FILE = process.env.LICENSES_FILE || path.join(DATA_DIR, 'licenses.json');
-const TABLES = ['warehouses', 'products', 'stockMoves', 'customers', 'invoices', 'invoiceLines', 'payments', 'users'];
+const TABLES = ['warehouses', 'products', 'stockMoves', 'customers', 'invoices', 'invoiceLines', 'payments', 'users', 'units', 'productUnits', 'barcodes', 'cashbooks'];
 
 if (!TOKEN) console.warn('DUÝDURYŞ: SYNC_TOKEN berilmedi — sinhronlaşdyrma ýapyk.');
 fs.mkdirSync(DATA_DIR, { recursive: true });

@@ -9,7 +9,7 @@ import androidx.room.Room
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import kotlinx.coroutines.Dispatchers
 import tm.sowdahasap.data.AppDatabase
-import tm.sowdahasap.data.MIGRATION_1_2
+import tm.sowdahasap.data.ALL_MIGRATIONS
 import tm.sowdahasap.platform.Platform
 import tm.sowdahasap.ui.AppRoot
 import tm.sowdahasap.util.KeyValueStore
@@ -22,7 +22,7 @@ class AndroidApp : Application() {
         val db = Room.databaseBuilder<AppDatabase>(this, getDatabasePath("sowdahasap.db").absolutePath)
             .setDriver(BundledSQLiteDriver())
             .setQueryCoroutineContext(Dispatchers.IO)
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(*ALL_MIGRATIONS)
             .build()
         val sp = getSharedPreferences("sowdahasap", Context.MODE_PRIVATE)
         val kv = object : KeyValueStore {

@@ -28,11 +28,38 @@ object Repo {
     suspend fun <R> tx(block: suspend () -> R): R =
         App.db.useWriterConnection { conn -> conn.immediateTransaction { block() } }
 
+    const val MAIN_CASHBOOK = "main"
+
     suspend fun ensureDefaults() {
-        if (dao.warehouseCount() == 0) {
-            // Hemme enjamda şol bir ID — sinhronlaşdyrylanda iki gezek döremez
-            dao.upsertWarehouse(Warehouse(MAIN_WAREHOUSE, "Esasy ammar", 1L))
+        // Hemme enjamda şol bir ID — sinhronlaşdyrylanda iki gezek döremez
+        if (dao.warehouseCount() == 0) dao.upsertWarehouse(Warehouse(MAIN_WAREHOUSE, "Esasy ambar", 1L))
+        if (dao.cashbookCount() == 0) dao.upsertCashbook(Cashbook(MAIN_CASHBOOK, "Nagt depder", 1L))
+        if (dao.unitCount() == 0) {
+            listOf("san", "kg", "pacga", "blok", "karapka", "latok", "litr", "metr").forEach {
+                dao.upsertUnit(UnitDef("u-$it", it, "", 1L))
+            }
         }
+    }
+
+    // ---------- Kodlar ----------
+    private fun nextCode(prefix: String, existing: List<String>, width: Int): String {
+        val max = existing.mapNotNull { it.removePrefix(prefix).toIntOrNull() }.maxOrNull() ?: 0
+        return prefix + (max + 1).toString().padStart(width, '0')
+    }
+    suspend fun nextProductCode() = nextCode("H-", dao.productCodes(), 6)
+    suspend fun nextCustomerCode() = nextCode("M-", dao.customerCodes(), 5)
+
+    // ---------- Ştrihkod ----------
+    /** Ştrihkod boýunça haryt we ölçeg (mysal: pacganyň ştrihkody -> pacga) */
+    suspend fun findByCode(code: String): Pair<Product, ProductUnit?>? {
+        val c = code.trim()
+        if (c.isEmpty()) return null
+        val p = dao.productByBarcode(c) ?: return null
+        if (p.state != ItemState.ACTIVE) return null
+        val bc = dao.barcodeByCode(c)
+        val unit = if (bc != null && bc.productId == p.id && bc.unitName.isNotBlank() && bc.unitName != p.unit)
+            dao.unitsOf(p.id).firstOrNull { it.unitName == bc.unitName } else null
+        return p to unit
     }
 
     // ---------- Bahalar ----------
@@ -46,7 +73,34 @@ object Repo {
     // ---------- Harytlar ----------
     suspend fun saveProduct(p: Product) = dao.upsertProduct(p.copy(updatedAt = now()))
 
-    suspend fun deleteProduct(p: Product) = dao.upsertProduct(p.copy(deleted = true, updatedAt = now()))
+    /** Harydy goşmaça ölçegleri we ştrihkodlary bilen bilelikde ýatda saklaýar */
+    suspend fun saveProductFull(p: Product, units: List<ProductUnit>, codes: List<Barcode>) {
+        val t = now()
+        tx {
+            dao.upsertProduct(p.copy(barcode = "", updatedAt = t))
+            val keepU = units.map { it.id }.toSet()
+            dao.upsertProductUnits(dao.allUnitsOf(p.id).filter { it.id !in keepU && !it.deleted }
+                .map { it.copy(deleted = true, updatedAt = t) } + units.map { it.copy(productId = p.id, updatedAt = t) })
+            val keepB = codes.map { it.id }.toSet()
+            dao.upsertBarcodes(dao.allBarcodesOf(p.id).filter { it.id !in keepB && !it.deleted }
+                .map { it.copy(deleted = true, updatedAt = t) } + codes.map { it.copy(productId = p.id, updatedAt = t) })
+        }
+    }
+
+    /** Ýagdaýy üýtgetmek. Hereketi bar haryt "Ýalňyş" bolup bilmez, diňe "Öçürilen". */
+    suspend fun setProductState(p: Product, state: String): String? {
+        if (state == ItemState.ERROR && (dao.moveCountOfProduct(p.id) > 0 || dao.lineCountOfProduct(p.id) > 0))
+            return "Bu harydyň hereketi bar. Ony diňe «Öçürilen» edip bolýar."
+        dao.upsertProduct(p.copy(state = state, updatedAt = now()))
+        return null
+    }
+
+    suspend fun setCustomerState(c: Customer, state: String): String? {
+        if (state == ItemState.ERROR && (dao.invoiceCountOfCustomer(c.id) > 0 || dao.paymentCountOfCustomer(c.id) > 0))
+            return "Bu müşderiniň hereketi bar. Ony diňe «Öçürilen» edip bolýar."
+        dao.upsertCustomer(c.copy(state = state, updatedAt = now()))
+        return null
+    }
 
     // ---------- Ammar ----------
     suspend fun addMove(productId: String, warehouseId: String, qty: Double, type: String, note: String = "") {
@@ -91,19 +145,33 @@ object Repo {
         return tx { writeDraft(inv, lines, t) }
     }
 
-    /** Fakturany tassyklaýar: ammardan düşýär, töleg bolsa ýazylýar */
+    /** Fakturany tassyklaýar: ammar we kassa hereketleri ýazylýar */
     suspend fun post(inv: Invoice, lines: List<InvoiceLine>, paid: Long): Invoice {
         val t = now()
         return tx {
-            val saved = writeDraft(inv, lines, t).copy(status = InvoiceStatus.POSTED, updatedAt = t)
+            val saved = writeDraft(inv, lines, t).copy(status = InvoiceStatus.POSTED, paid = paid, updatedAt = t)
             dao.upsertInvoice(saved)
-            dao.upsertMoves(lines.map {
-                StockMove(newId(), it.productId, saved.warehouseId, -it.qty, MoveType.SALE, saved.id,
-                    saved.number, Session.userId, t, t)
-            })
-            if (paid > 0 && saved.customerId != null) {
-                dao.upsertPayment(Payment(newId(), saved.customerId, paid, saved.id,
-                    "Faktura ${saved.number}", Session.userId, t, t))
+            val moves = mutableListOf<StockMove>()
+            for (l in lines) {
+                val base = l.qty * l.factor
+                if (saved.kind == InvoiceKind.TRANSFER) {
+                    moves += StockMove(newId(), l.productId, saved.warehouseId, -base, MoveType.TRANSFER, saved.id, saved.number, Session.userId, t, t)
+                    moves += StockMove(newId(), l.productId, saved.toWarehouseId, base, MoveType.TRANSFER, saved.id, saved.number, Session.userId, t, t)
+                } else {
+                    val type = when (saved.kind) {
+                        InvoiceKind.SALE -> MoveType.SALE
+                        InvoiceKind.RETURN_OUT -> MoveType.OUT
+                        else -> MoveType.IN
+                    }
+                    moves += StockMove(newId(), l.productId, saved.warehouseId, InvoiceKind.stockSign(saved.kind) * base,
+                        type, saved.id, saved.number, Session.userId, t, t)
+                }
+            }
+            dao.upsertMoves(moves)
+            val sign = InvoiceKind.cashSign(saved.kind)
+            if (paid != 0L && sign != 0L) {
+                dao.upsertPayment(Payment(newId(), saved.customerId ?: "", paid * sign, saved.id,
+                    "Faktura ${saved.number}", Session.userId, t, t, cashbookId = saved.cashbookId))
             }
             saved
         }
@@ -123,12 +191,14 @@ object Repo {
     // ---------- Müşderiler ----------
     suspend fun saveCustomer(c: Customer) = dao.upsertCustomer(c.copy(updatedAt = now()))
 
-    suspend fun addPayment(customerId: String, amount: Long, note: String) {
+    /** amount: + müşderiden pul aldyk, - müşderä pul berdik */
+    suspend fun addPayment(customerId: String, amount: Long, note: String, cashbookId: String = MAIN_CASHBOOK) {
         val t = now()
-        dao.upsertPayment(Payment(newId(), customerId, amount, null, note, Session.userId, t, t))
+        dao.upsertPayment(Payment(newId(), customerId, amount, null, note, Session.userId, t, t, cashbookId = cashbookId))
     }
 
-    suspend fun deletePayment(p: Payment) = dao.upsertPayment(p.copy(deleted = true, updatedAt = now()))
+    /** Ýalňyş ýazylan tölegi ýatyrmak (diňe admin) */
+    suspend fun cancelPayment(p: Payment) = dao.upsertPayment(p.copy(deleted = true, updatedAt = now()))
 
     // ---------- Ulanyjylar ----------
     private fun hash(password: String, salt: String): String {
@@ -163,10 +233,11 @@ object Repo {
     suspend fun exportAll(): SyncData = SyncData(
         dao.chWarehouses(-1), dao.chProducts(-1), dao.chMoves(-1), dao.chCustomers(-1),
         dao.chInvoices(-1), dao.chLines(-1), dao.chPayments(-1), dao.chUsers(-1),
+        dao.chUnits(-1), dao.chProductUnits(-1), dao.chBarcodes(-1), dao.chCashbooks(-1),
     )
 
     suspend fun backupBytes(): ByteArray {
-        val b = Backup(app = "sowdahasap", version = 2, created = now(), data = exportAll())
+        val b = Backup(app = "sowdahasap", version = 3, created = now(), data = exportAll())
         return json.encodeToString(Backup.serializer(), b).toByteArray(Charsets.UTF_8)
     }
 
@@ -178,6 +249,9 @@ object Repo {
         tx {
             dao.clearLines(); dao.clearInvoices(); dao.clearPayments(); dao.clearMoves()
             dao.clearProducts(); dao.clearCustomers(); dao.clearWarehouses(); dao.clearUsers()
+            dao.clearUnits(); dao.clearProductUnits(); dao.clearBarcodes(); dao.clearCashbooks()
+            dao.upsertUnits(d.units); dao.upsertProductUnits(d.productUnits); dao.upsertBarcodes(d.barcodes)
+            dao.upsertCashbooks(d.cashbooks)
             dao.upsertWarehouses(d.warehouses); dao.upsertProducts(d.products); dao.upsertMoves(d.stockMoves)
             dao.upsertCustomers(d.customers); dao.upsertInvoices(d.invoices); dao.upsertLines(d.invoiceLines)
             dao.upsertPayments(d.payments); dao.upsertUsers(d.users)

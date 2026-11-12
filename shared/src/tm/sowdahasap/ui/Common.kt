@@ -4,7 +4,6 @@ package tm.sowdahasap.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,12 +27,10 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -63,9 +60,10 @@ private val Green = Color(0xFF00695C)
 
 @Composable
 fun AppTheme(content: @Composable () -> Unit) {
-    val scheme = if (isSystemInDarkTheme())
-        darkColorScheme(primary = Color(0xFF4DB6AC), secondary = Color(0xFFFFB74D))
-    else lightColorScheme(primary = Green, secondary = Color(0xFFEF6C00), primaryContainer = Color(0xFFB2DFDB))
+    val scheme = lightColorScheme(
+        primary = Pal.TitleBlue, secondary = Color(0xFFEF6C00), primaryContainer = Color(0xFFCFE3F3),
+        surface = Color(0xFFFDFDFB), background = Color(0xFFE9F5E6),
+    )
     MaterialTheme(colorScheme = scheme, content = content)
 }
 
@@ -75,6 +73,7 @@ fun IconText(symbol: String, onClick: () -> Unit, enabled: Boolean = true) {
     IconButton(onClick = onClick, enabled = enabled) { Text(symbol, fontSize = 20.sp) }
 }
 
+/** Sahypanyň içi: ýokarda kiçi başlyk we düwmeler, fon nagyşly (sahypa ýapmak — tabdaky ✕) */
 @Composable
 fun Screen(
     title: String,
@@ -84,18 +83,13 @@ fun Screen(
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                navigationIcon = { if (onBack != null) IconText("⬅", onBack) },
-                actions = actions,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                ),
-            )
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(title, color = Pal.TabActive, fontSize = 20.sp, modifier = Modifier.weight(1f))
+                actions()
+            }
         },
         floatingActionButton = fab,
         content = content,
@@ -123,6 +117,9 @@ fun Field(
         onValueChange = onChange,
         label = { Text(label) },
         modifier = modifier,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = Pal.FieldBg, unfocusedContainerColor = Pal.FieldBg, disabledContainerColor = Pal.FieldBg,
+        ),
         singleLine = singleLine,
         trailingIcon = trailing,
         visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
@@ -175,39 +172,32 @@ fun ConfirmDialog(title: String, text: String, onConfirm: () -> Unit, onDismiss:
 
 /** Haryt saýlamak penjiresi: gözleg, kamera barkody (telefon), USB barkod okaýjy (Enter) */
 @Composable
-fun ProductPicker(warehouseId: String?, onPick: (Product) -> Unit, onDismiss: () -> Unit) {
-    var q by remember { mutableStateOf("") }
-    val show = toast()
-    val flow = remember(q, warehouseId) { App.dao.productsWithStock(q, warehouseId) }
+fun ProductPicker(warehouseId: String?, onPick: (Product) -> Unit, onDismiss: () -> Unit, initial: String = "") {
+    val flow = remember(warehouseId) { App.dao.productsWithStock("", warehouseId) }
     val list by flow.collectAsState(initial = emptyList())
+    val show = toast()
     var scanned by remember { mutableStateOf<String?>(null) }
     val scan = rememberScanner { scanned = it }
     LaunchedEffect(scanned) {
         val code = scanned ?: return@LaunchedEffect
         val p = App.dao.productByBarcode(code)
-        if (p != null) onPick(p) else { show("Barkod tapylmady: $code"); q = code }
+        if (p != null) onPick(p) else show("Barkod tapylmady: $code")
         scanned = null
     }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Ýap") } },
-        title = { Text("Haryt saýlaň") },
-        text = {
-            Column {
-                Field(q, { q = it }, "Gözleg (ady ýa-da barkod)",
-                    onDone = { if (q.isNotBlank()) scanned = q.trim() },
-                    trailing = { if (scan != null) IconText("📷", scan) })
-                LazyColumn(Modifier.height(380.dp)) {
-                    items(list, key = { it.product.id }) { ps ->
-                        ListItem(
-                            headlineContent = { Text(ps.product.name) },
-                            supportingContent = { Text("${ps.product.sellPrice.money()} TMT · galyndy ${ps.stock.qty()} ${ps.product.unit}") },
-                            modifier = Modifier.clickable { onPick(ps.product) },
-                        )
-                    }
-                }
-            }
-        },
+    SearchDialog(
+        "Haryt",
+        list,
+        listOf(
+            Col("Ady", 3f) to { ps: tm.sowdahasap.data.ProductStock -> ps.product.name },
+            Col("Kody", 1.2f) to { ps -> ps.product.code },
+            Col("Bahasy", 1.2f, androidx.compose.ui.text.style.TextAlign.End) to { ps -> ps.product.sellPrice.money() },
+            Col("Galyndy", 1.2f, androidx.compose.ui.text.style.TextAlign.End) to { ps -> ps.stock.qty() + " " + ps.product.unit },
+        ),
+        onPick = { onPick(it.product) },
+        onDismiss = onDismiss,
+        searchText = { it.product.name + " " + it.product.code + " " + it.product.barcode },
+        extra = if (scan != null) ({ TextButton(onClick = scan) { Text("📷 Kamera bilen barkod okat") } }) else null,
+        initialQuery = initial,
     )
 }
 

@@ -76,6 +76,8 @@ object Platform {
         try { if (Desktop.isDesktopSupported()) Desktop.getDesktop().open(f) } catch (e: Exception) { }
     }
 
+    fun exitApp() { LanServer.stop(); kotlin.system.exitProcess(0) }
+
     // ---------- Esasy serwer (Wi-Fi) ----------
     fun startServer(port: Int, token: String): String? = LanServer.start(port, token, dataDir())
     fun stopServer() = LanServer.stop()

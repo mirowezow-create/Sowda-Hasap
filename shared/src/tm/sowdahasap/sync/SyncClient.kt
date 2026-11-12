@@ -6,7 +6,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import tm.sowdahasap.App
+import tm.sowdahasap.data.Barcode
+import tm.sowdahasap.data.Cashbook
 import tm.sowdahasap.data.Customer
+import tm.sowdahasap.data.ProductUnit
+import tm.sowdahasap.data.UnitDef
 import tm.sowdahasap.data.Invoice
 import tm.sowdahasap.data.InvoiceLine
 import tm.sowdahasap.data.Repo
@@ -30,9 +34,14 @@ data class SyncData(
     val invoiceLines: List<InvoiceLine> = emptyList(),
     val payments: List<Payment> = emptyList(),
     val users: List<User> = emptyList(),
+    val units: List<UnitDef> = emptyList(),
+    val productUnits: List<ProductUnit> = emptyList(),
+    val barcodes: List<Barcode> = emptyList(),
+    val cashbooks: List<Cashbook> = emptyList(),
 ) {
     val size: Int get() = warehouses.size + products.size + stockMoves.size + customers.size +
-        invoices.size + invoiceLines.size + payments.size + users.size
+        invoices.size + invoiceLines.size + payments.size + users.size +
+        units.size + productUnits.size + barcodes.size + cashbooks.size
 }
 
 @Serializable
@@ -62,6 +71,7 @@ object SyncClient {
         val local = SyncData(
             dao.chWarehouses(since), dao.chProducts(since), dao.chMoves(since), dao.chCustomers(since),
             dao.chInvoices(since), dao.chLines(since), dao.chPayments(since), dao.chUsers(since),
+            dao.chUnits(since), dao.chProductUnits(since), dao.chBarcodes(since), dao.chCashbooks(since),
         )
         val req = SyncRequest(LicenseManager.deviceCode(), prefs.lastPull, local)
         val body = json.encodeToString(SyncRequest.serializer(), req).toByteArray(Charsets.UTF_8)
@@ -91,6 +101,10 @@ object SyncClient {
             dao.upsertLines(r.invoiceLines)
             dao.upsertPayments(r.payments)
             dao.upsertUsers(r.users)
+            dao.upsertUnits(r.units)
+            dao.upsertProductUnits(r.productUnits)
+            dao.upsertBarcodes(r.barcodes)
+            dao.upsertCashbooks(r.cashbooks)
         }
         prefs.lastPush = started
         prefs.lastPull = resp.now

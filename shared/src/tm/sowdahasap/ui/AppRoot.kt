@@ -27,14 +27,6 @@ import tm.sowdahasap.platform.Platform
 import tm.sowdahasap.platform.PlatformBackHandler
 import tm.sowdahasap.sync.SyncClient
 
-/** Ýönekeý nawigasiýa: ekranlaryň sanawy */
-class Nav {
-    val stack = mutableStateListOf("home")
-    val current: String get() = stack.last()
-    fun go(route: String) { stack.add(route) }
-    fun back() { if (stack.size > 1) stack.removeAt(stack.size - 1) }
-}
-
 /** Programmanyň kök ekrany — Android we Windows şuny çagyrýar */
 @Composable
 fun AppRoot() {
@@ -67,38 +59,12 @@ fun AppRoot() {
         Surface(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize()) {
                 when {
-                    !license.valid -> LicenseScreen(license) { license = LicenseManager.status() }
-                    Session.user == null -> LoginScreen()
-                    else -> MainNav(license, onLicense = { license = LicenseManager.status() })
+                    !license.valid -> PatternBackground { LicenseScreen(license) { license = LicenseManager.status() } }
+                    Session.user == null -> PatternBackground { LoginScreen() }
+                    else -> Shell(license, onLicense = { license = LicenseManager.status() })
                 }
-                SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).padding(16.dp))
+                SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).padding(bottom = 56.dp))
             }
         }
     }
-}
-
-@Composable
-private fun MainNav(license: LicenseManager.Status, onLicense: () -> Unit) {
-    val nav = remember { Nav() }
-    PlatformBackHandler(enabled = nav.stack.size > 1) { nav.back() }
-    val back: () -> Unit = { nav.back() }
-    val r = nav.current
-    val arg = r.substringAfter('/', "")
-    key(nav.stack.size, r) { when (r.substringBefore('/')) {
-        "home" -> HomeScreen(license, go = { nav.go(it) })
-        "products" -> ProductsScreen(back, open = { nav.go("product/$it") })
-        "product" -> ProductEditScreen(arg.ifEmpty { "new" }, back)
-        "stock" -> StockScreen(back)
-        "invoices" -> InvoicesScreen(back, open = { nav.go("invoice/$it") })
-        "invoice" -> InvoiceEditScreen(arg.ifEmpty { "new" }, back)
-        "customers" -> CustomersScreen(back, open = { nav.go("customer/$it") })
-        "customer" -> CustomerDetailScreen(arg.ifEmpty { "new" }, back, openInvoice = { nav.go("invoice/$it") })
-        "reports" -> ReportsScreen(back)
-        "sms" -> DebtSmsScreen(back)
-        "users" -> UsersScreen(back)
-        "backup" -> BackupScreen(back)
-        "settings" -> SettingsScreen(back, openLicense = { nav.go("license") })
-        "license" -> LicenseScreen(license, onBack = back) { onLicense(); back() }
-        else -> HomeScreen(license, go = { nav.go(it) })
-    } }
 }
