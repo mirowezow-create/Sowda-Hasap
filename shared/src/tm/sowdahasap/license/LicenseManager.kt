@@ -55,28 +55,51 @@ object LicenseManager {
         return h.take(8).joinToString("") { "%02X".format(it) }.chunked(4).joinToString("-")
     }
 
-    /** Açary barlaýar; dogry bolsa möhlet senesini gaýtarýar */
+    /**
+     * Açary barlaýar; dogry bolsa möhletiň soňky gününi gaýtarýar.
+     *  - M202612-<gol>  : aýlyk açar (2026-njy ýylyň dekabry, aýyň ahyryna çenli)
+     *  - Y2027-<gol>    : ýyllyk açar (2027-nji ýylyň 31-nji dekabryna çenli)
+     *  - 20261231-<gol> : köne görnüş (belli sene çenli)
+     */
     fun verify(device: String, rawKey: String): LocalDate? {
         return try {
             val key = rawKey.filterNot { it.isWhitespace() }
-            val m = Regex("^(\\d{8})-([A-Za-z0-9_-]+)$").find(key) ?: return null
-            val date = m.groupValues[1]
-            val sig = Base64.getUrlDecoder().decode(m.groupValues[2])
+            val code = key.substringBefore('-', "")
+            val sig = Base64.getUrlDecoder().decode(key.substringAfter('-', ""))
             if (sig.size != 64) return null
+            val (payload, expiry) = when {
+                Regex("^M\\d{6}$").matches(code) -> {
+                    val y = code.substring(1, 5).toInt(); val m = code.substring(5, 7).toInt()
+                    if (m !in 1..12) return null
+                    "SH2|$device|$code" to java.time.YearMonth.of(y, m).atEndOfMonth()
+                }
+                Regex("^Y\\d{4}$").matches(code) -> "SH2|$device|$code" to LocalDate.of(code.substring(1).toInt(), 12, 31)
+                Regex("^\\d{8}$").matches(code) -> "SH1|$device|$code" to LocalDate.parse(code, YMD)
+                else -> return null
+            }
             val v = Signature.getInstance("SHA256withECDSA")
             v.initVerify(publicKey)
-            v.update("SH1|$device|$date".toByteArray(Charsets.UTF_8))
-            if (v.verify(p1363ToDer(sig))) LocalDate.parse(date, YMD) else null
+            v.update(payload.toByteArray(Charsets.UTF_8))
+            if (v.verify(p1363ToDer(sig))) expiry else null
         } catch (e: Exception) {
             null
         }
     }
 
+    /** Saklanan açarlar (birnäçe aýyň açary bolup biler: şu aý we indiki aý) */
+    private fun storedKeys(): List<String> =
+        App.prefs.licenseKey.split('\n', ' ', ',').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+
+    /** Iň uzak möhletli dogry açar */
+    private fun bestExpiry(): LocalDate? {
+        val dev = deviceCode()
+        return storedKeys().mapNotNull { verify(dev, it) }.maxOrNull()
+    }
+
     fun status(): Status {
         val prefs = App.prefs
-        val key = prefs.licenseKey
-        if (key.isBlank()) return Status(false, null, 0, "Lisenziýa açary girizilmedi")
-        val expiry = verify(deviceCode(), key) ?: return Status(false, null, 0, "Açar nädogry ýa-da başga enjam üçin")
+        if (storedKeys().isEmpty()) return Status(false, null, 0, "Lisenziýa açary girizilmedi")
+        val expiry = bestExpiry() ?: return Status(false, null, 0, "Açar nädogry ýa-da başga enjam üçin")
 
         // Sagady yzyna süýşürip aldamagyň öňüni almak
         val nowMs = System.currentTimeMillis()
@@ -95,9 +118,12 @@ object LicenseManager {
     /** Täze açary girizmek. Üstünlik bolsa null, ýogsam ýalňyşlyk teksti */
     fun activate(key: String): String? {
         val clean = key.filterNot { it.isWhitespace() }
-        val exp = verify(deviceCode(), clean) ?: return "Açar nädogry ýa-da başga enjam üçin"
+        val dev = deviceCode()
+        val exp = verify(dev, clean) ?: return "Açar nädogry ýa-da başga enjam üçin"
         if (exp.isBefore(LocalDate.now())) return "Bu açaryň möhleti eýýäm gutarypdyr ($exp)"
-        App.prefs.licenseKey = clean
+        // Möhleti geçmedik köne açarlar hem saklanýar (mysal: şu aýyň we indiki aýyň açary)
+        val keep = storedKeys().filter { k -> verify(dev, k)?.let { !it.isBefore(LocalDate.now()) } == true }
+        App.prefs.licenseKey = (keep + clean).distinct().joinToString("\n")
         return null
     }
 

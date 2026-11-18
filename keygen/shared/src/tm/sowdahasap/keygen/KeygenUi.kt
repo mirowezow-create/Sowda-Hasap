@@ -215,53 +215,69 @@ private fun MainScreen(store: KeygenStore, sealed: SealedKey, k: Unlocked, show:
     }
 }
 
+private val MONTHS = listOf("Ýanwar", "Fewral", "Mart", "Aprel", "Maý", "Iýun", "Iýul", "Awgust", "Sentýabr", "Oktýabr", "Noýabr", "Dekabr")
+
+fun periodTitle(p: Period) = if (p.month != null) "${MONTHS[p.month - 1]} ${p.year}" else "${p.year} ýyl"
+
 @Composable
 private fun IssueTab(k: Unlocked, show: (String) -> Unit, onIssued: (Issued) -> Unit) {
     val clipboard = LocalClipboardManager.current
+    val today = LocalDate.now()
     var device by remember { mutableStateOf("") }
-    var months by remember { mutableStateOf(1) }
-    var customDate by remember { mutableStateOf("") }
+    var yearly by remember { mutableStateOf(false) }
+    var year by remember { mutableStateOf(today.year) }
+    var month by remember { mutableStateOf(today.monthValue) }
     var note by remember { mutableStateOf("") }
-    var result by remember { mutableStateOf<Issued?>(null) }
+    var result by remember { mutableStateOf<Pair<Issued, String>?>(null) }
 
     Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(device, { device = it }, label = { Text("Enjam kody (XXXX-XXXX-XXXX-XXXX)") },
             singleLine = true, modifier = Modifier.fillMaxWidth(),
             trailingIcon = { TextButton(onClick = { clipboard.getText()?.text?.let { device = it.trim() } }) { Text("Goý") } })
-        Text("Möhlet:")
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(1, 2, 3, 6, 12).forEach { m ->
-                FilterChip(selected = months == m && customDate.isBlank(), onClick = { months = m; customDate = "" },
-                    label = { Text("$m aý") })
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = !yearly, onClick = { yearly = false }, label = { Text("Aýlyk açar") })
+            FilterChip(selected = yearly, onClick = { yearly = true }, label = { Text("Ýyllyk açar") })
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { year-- }) { Text("◀", fontSize = 20.sp) }
+            Text("$year", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            TextButton(onClick = { year++ }) { Text("▶", fontSize = 20.sp) }
+        }
+        if (!yearly) {
+            MONTHS.chunked(4).forEachIndexed { r, row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    row.forEachIndexed { c, name ->
+                        val m = r * 4 + c + 1
+                        FilterChip(selected = month == m, onClick = { month = m }, label = { Text(name) },
+                            modifier = Modifier.weight(1f))
+                    }
+                }
             }
         }
-        OutlinedTextField(customDate, { customDate = it }, label = { Text("Ýa-da anyk sene (2026-12-31)") },
-            singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(note, { note = it }, label = { Text("Bellik (müşderiniň ady, dükan)") },
             singleLine = true, modifier = Modifier.fillMaxWidth())
+        val period = Period(year, if (yearly) null else month)
         Button(modifier = Modifier.fillMaxWidth(), onClick = {
             val dev = KeyCrypto.normDevice(device)
-            val expiry = if (customDate.isNotBlank()) runCatching { LocalDate.parse(customDate.trim()) }.getOrNull()
-            else LocalDate.now().plusMonths(months.toLong())
             when {
                 dev == null -> show("Enjam kody 16 simwol bolmaly (0-9, A-F)")
-                expiry == null -> show("Sene nädogry, mysal: 2026-12-31")
-                expiry.isBefore(LocalDate.now()) -> show("Sene geçipdir")
+                period.end.isBefore(today) -> show("Bu möhlet eýýäm geçipdir")
                 else -> {
-                    val key = KeyCrypto.makeLicense(k, dev, expiry)
-                    val i = Issued(dev, expiry.toString(), note.trim(), key, System.currentTimeMillis())
+                    val key = KeyCrypto.makePeriodLicense(k, dev, period)
+                    val i = Issued(dev, period.end.toString(), note.trim().ifEmpty { periodTitle(period) }, key, System.currentTimeMillis())
                     onIssued(i)
-                    result = i
+                    result = i to periodTitle(period)
                     clipboard.setText(AnnotatedString(key))
                     show("Açar döredildi we göçürildi")
                 }
             }
-        }) { Text("🔑 Açar döret") }
+        }) { Text("🔑 ${periodTitle(period)} üçin açar") }
+        Text("Şol bir enjam we şol bir aý/ýyl üçin açar hemişe birmeňzeş bolýar.", fontSize = 12.sp, color = Color(0xFF666666))
 
-        result?.let { r ->
+        result?.let { (r, title) ->
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("${r.device} · ${r.expiry} çenli", style = MaterialTheme.typography.titleSmall)
+                    Text("${r.device} · $title (${r.expiry} çenli)", style = MaterialTheme.typography.titleSmall)
                     Text(r.key, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
                     Button(onClick = { clipboard.setText(AnnotatedString(r.key)); show("Göçürildi") }) { Text("📋 Göçür") }
                 }

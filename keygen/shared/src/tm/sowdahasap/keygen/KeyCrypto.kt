@@ -9,7 +9,11 @@ import java.security.PrivateKey
 import java.security.PublicKey
 import java.security.SecureRandom
 import java.security.Signature
+import java.math.BigInteger
+import java.security.interfaces.ECPrivateKey
+import java.security.spec.ECFieldFp
 import java.security.spec.ECGenParameterSpec
+import javax.crypto.Mac
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
 import java.time.LocalDate
@@ -27,6 +31,12 @@ data class SealedKey(val v: Int = 1, val salt: String, val iv: String, val ct: S
 
 @Serializable
 data class Issued(val device: String, val expiry: String, val note: String, val key: String, val created: Long)
+
+/** Aýlyk (M202612) ýa-da ýyllyk (Y2027) möhlet */
+data class Period(val year: Int, val month: Int?) {
+    val code: String get() = if (month != null) "M%04d%02d".format(year, month) else "Y%04d".format(year)
+    val end: LocalDate get() = if (month != null) java.time.YearMonth.of(year, month).atEndOfMonth() else LocalDate.of(year, 12, 31)
+}
 
 class Unlocked(val priv: PrivateKey, val pub: PublicKey, val pubB64: String)
 
@@ -100,6 +110,100 @@ object KeyCrypto {
         val key = date + "-" + Base64.getUrlEncoder().withoutPadding().encodeToString(raw)
         check(verify(k.pub, device, key)) { "Açar barlagdan geçmedi" }
         return key
+    }
+
+    /**
+     * Aýlyk/ýyllyk açar. Gol RFC 6979 boýunça kesgitli (deterministic): şol bir enjam we şol bir
+     * möhlet üçin açar hemişe birmeňzeş bolýar. Programma ony adaty ECDSA bilen barlaýar.
+     */
+    fun makePeriodLicense(k: Unlocked, device: String, period: Period): String {
+        val code = period.code
+        val raw = signDeterministic(k.priv as ECPrivateKey, "SH2|$device|$code".toByteArray(Charsets.UTF_8))
+        val key = code + "-" + Base64.getUrlEncoder().withoutPadding().encodeToString(raw)
+        check(verifyPeriod(k.pub, device, key)) { "Açar barlagdan geçmedi" }
+        return key
+    }
+
+    fun verifyPeriod(pub: PublicKey, device: String, key: String): Boolean = try {
+        val code = key.substringBefore('-')
+        val raw = Base64.getUrlDecoder().decode(key.substringAfter('-'))
+        val v = Signature.getInstance("SHA256withECDSA")
+        v.initVerify(pub)
+        v.update("SH2|$device|$code".toByteArray(Charsets.UTF_8))
+        v.verify(p1363ToDer(raw))
+    } catch (e: Exception) {
+        false
+    }
+
+    // ---------- RFC 6979 kesgitli ECDSA (P-256, SHA-256) ----------
+    private fun hmac(key: ByteArray, vararg parts: ByteArray): ByteArray {
+        val m = Mac.getInstance("HmacSHA256")
+        m.init(SecretKeySpec(key, "HmacSHA256"))
+        parts.forEach { m.update(it) }
+        return m.doFinal()
+    }
+
+    private fun i2o(x: BigInteger, len: Int = 32): ByteArray {
+        val b = x.toByteArray()
+        return when {
+            b.size == len -> b
+            b.size > len -> b.copyOfRange(b.size - len, b.size)
+            else -> ByteArray(len - b.size) + b
+        }
+    }
+
+    private class Pt(val x: BigInteger, val y: BigInteger)
+
+    fun signDeterministic(priv: ECPrivateKey, msg: ByteArray): ByteArray {
+        val params = priv.params
+        val p = (params.curve.field as ECFieldFp).p
+        val a = params.curve.a
+        val n = params.order
+        val g = Pt(params.generator.affineX, params.generator.affineY)
+        val d = priv.s
+        val h = java.security.MessageDigest.getInstance("SHA-256").digest(msg)
+        val e = BigInteger(1, h)
+
+        fun add(p1: Pt?, p2: Pt?): Pt? {
+            if (p1 == null) return p2
+            if (p2 == null) return p1
+            val lam = if (p1.x == p2.x) {
+                if ((p1.y + p2.y).mod(p) == BigInteger.ZERO) return null
+                (BigInteger.valueOf(3) * p1.x * p1.x + a) * (BigInteger.valueOf(2) * p1.y).modInverse(p)
+            } else (p2.y - p1.y) * (p2.x - p1.x).modInverse(p)
+            val l = lam.mod(p)
+            val x3 = (l * l - p1.x - p2.x).mod(p)
+            val y3 = (l * (p1.x - x3) - p1.y).mod(p)
+            return Pt(x3, y3)
+        }
+        fun mul(k: BigInteger, pt: Pt): Pt? {
+            var r: Pt? = null
+            var q: Pt? = pt
+            for (i in 0 until k.bitLength()) {
+                if (k.testBit(i)) r = add(r, q)
+                q = add(q, q)
+            }
+            return r
+        }
+
+        val x = i2o(d)
+        val h1 = i2o(e.mod(n))
+        var v = ByteArray(32) { 1 }
+        var kk = ByteArray(32)
+        kk = hmac(kk, v, byteArrayOf(0), x, h1); v = hmac(kk, v)
+        kk = hmac(kk, v, byteArrayOf(1), x, h1); v = hmac(kk, v)
+        while (true) {
+            v = hmac(kk, v)
+            val k = BigInteger(1, v)
+            if (k.signum() > 0 && k < n) {
+                val r = mul(k, g)?.x?.mod(n) ?: BigInteger.ZERO
+                if (r.signum() != 0) {
+                    val sig = (k.modInverse(n) * (e + r * d)).mod(n)
+                    if (sig.signum() != 0) return i2o(r) + i2o(sig)
+                }
+            }
+            kk = hmac(kk, v, byteArrayOf(0)); v = hmac(kk, v)
+        }
     }
 
     fun verify(pub: PublicKey, device: String, key: String): Boolean = try {
