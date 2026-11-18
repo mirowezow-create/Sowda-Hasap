@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="tk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meniň Sowdam - Sniker</title>
+<style>
+body{font-family:sans-serif;background:#0f0f0f;color:#fff;padding:14px;margin:0}
+h2{text-align:center;color:#00ff88;margin:10px}
+.kart{background:#1c1c1c;padding:14px;border-radius:14px}
+input,select,button{width:100%;padding:12px;margin:6px 0;border-radius:10px;border:none;font-size:15px;box-sizing:border-box}
+input,select{background:#2a2a2a;color:#fff}
+button{background:#00ff88;color:#000;font-weight:bold}
+table{width:100%;margin-top:12px;border-collapse:collapse;font-size:13px}
+td,th{border:1px solid #333;padding:7px;text-align:center}
+.jem{background:#00ff88;color:#000;padding:13px;border-radius:12px;margin-top:12px;text-align:center;font-weight:bold;font-size:18px}
+.sil{background:#ff4444;color:#fff;padding:6px;border-radius:6px}
+</style>
+</head>
+<body>
+<h2>👟 MENIŇ SOWDAM</h2>
+<div class="kart">
+<input id="ad" placeholder="Haryt: Nike Air Jordan">
+<input id="razmer" placeholder="Razmer: 42">
+<input id="renk" placeholder="Reňk: Ak / Gara">
+<input id="musteri" placeholder="Müşderi ady / tel:">
+<input id="alys" type="number" placeholder="Näçä aldym? (lira)">
+<input id="satys" type="number" placeholder="Näçä satdym? (lira)">
+<button onclick="gos()">+ SATYŞ GOŞ</button>
+</div>
+<div class="jem" id="jem">Jemi Girdeji: 0 Lira | Jemi Satyş: 0</div>
+<table><tr><th>Haryt</th><th>Razmer</th><th>Alyş</th><th>Satış</th><th>Girdeji</th><th></th></tr><tbody id="sanaw"></tbody></table>
+<button onclick="arassala()" style="background:#333;color:#fff;margin-top:15px">Hemmesini Arassala</button>
+
+<script>
+let jemi=0, sany=0;
+let data = JSON.parse(localStorage.getItem('sowda')||'[]');
+function gorkez(){
+  let html=''; jemi=0; sany=data.length;
+  data.forEach((x,i)=>{
+    let g=x.s-x.a; jemi+=g;
+    html+=`<tr><td>${x.ad}<br><small>${x.musteri}</small></td><td>${x.razmer}<br>${x.renk}</td><td>${x.a}</td><td>${x.s}</td><td style="color:#00ff88">${g}</td><td><button class="sil" onclick="poz(${i})">X</button></td></tr>`;
+  });
+  document.getElementById('sanaw').innerHTML=html;
+  document.getElementById('jem').innerText=`Jemi Girdeji: ${jemi} Lira | Jemi Satyş: ${sany}`;
+}
+function gos(){
+  let ad=document.getElementById('ad').value;
+  let a=+document.getElementById('alys').value;
+  let s=+document.getElementById('satys').value;
+  if(!ad||!a||!s){alert('Haryt, alyş, satış doldur!');return;}
+  data.push({ad:ad, razmer:document.getElementById('razmer').value||'-', renk:document.getElementById('renk').value||'-', musteri:document.getElementById('musteri').value||'-', a:a, s:s});
+  localStorage.setItem('sowda', JSON.stringify(data));
+  gorkez();
+  document.querySelectorAll('input').forEach(e=>e.value='');
+}
+function poz(i){data.splice(i,1); localStorage.setItem('sowda', JSON.stringify(data)); gorkez();}
+function arassala(){if(confirm('Hemmesini pozmalymy?')){data=[]; localStorage.removeItem('sowda'); gorkez();}}
+gorkez();
+</script>
+</body>
+</html>
