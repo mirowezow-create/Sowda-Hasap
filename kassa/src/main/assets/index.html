@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="tk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KASSA</title>
+<style>
+*{box-sizing:border-box} body{margin:0;font-family:sans-serif;background:#cfe8d8}
+.top{background:#1da237;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px;font-weight:bold;font-size:20px}
+.top button{background:none;border:none;color:#fff;font-size:22px}
+.jem{text-align:center;color:#0000cc;font-size:22px;padding:8px;font-weight:bold}
+.row{display:flex;gap:8px;padding:5px 10px}
+.row input{padding:12px;font-size:16px;border:1px solid #999;border-radius:5px}
+.row input:first-child{width:32%} .row input:last-child{flex:1}
+.btn{width:100%;background:#1da237;color:#fff;padding:13px;border:none;font-size:18px;font-weight:bold}
+.kart{background:#e8f5e8;margin:10px;padding:12px;border-radius:8px}
+.kart label{font-size:14px;color:#333}
+.kart input{width:100%;padding:10px;margin:5px 0;font-size:18px;text-align:right}
+.musteri{display:flex;justify-content:space-between;align-items:center;padding:8px 12px}
+.musteri b{color:blue}
+table{width:100%;background:#fff;border-collapse:collapse}
+td,th{border:1px solid #ccc;padding:8px;text-align:center}
+</style>
+</head>
+<body>
+<div class="top"><span>α &nbsp; BAŞGA</span><span>☰ &nbsp; ✔ &nbsp; <span style="color:red">✕</span></span></div>
+<div class="jem" id="jemTxt">Jemi : 0 TMT &nbsp;/&nbsp; Setirler : 0</div>
+<div class="row"><input id="kod" placeholder="Ştrihkod"><input value="OK" style="text-align:center;color:#000;font-weight:bold" readonly></div>
+<div class="kart">
+<label>☑ Satyş edilende promo awtomatiki berilsin</label><br><br>
+<label>☑ Baha Müşderä/Fakturanyň görnüşine görä üýtgesin</label>
+</div>
+<div style="background:#1da237;color:#fff;text-align:center;padding:8px;font-weight:bold">Goşulmadýk hereket</div>
+<div style="background:#888;text-align:center;padding:8px">Promo sany<br>0</div>
+<div class="kart"><label>Alnan pul</label><input id="alnan" type="number" placeholder="0,00" oninput="hasapla()"><label>Gaýtargy</label><input id="gaytar" readonly value="0"></div>
+<div class="musteri"><span>❌</span><div style="text-align:center">Müşderi<br><b>Hiç kim</b></div><span>🔍</span></div>
+<div class="musteri"><span>❌</span><div style="text-align:center">Ikinji müşderi<br><b>Hiç kim</b></div><span>🔍</span></div>
+
+<h3 style="padding:0 10px">Haryt Goş</h3>
+<div class="row"><input id="ad" placeholder="Haryt ady"><input id="baha" type="number" placeholder="Baha TMT"></div>
+<button class="btn" onclick="gos()">+ GOŞ</button>
+<table><tr><th>Haryt</th><th>Baha</th><th>Sil</th></tr><tbody id="sanaw"></tbody></table>
+
+<script>
+let list=[]; 
+function gos(){let a=document.getElementById('ad').value; let b=+document.getElementById('baha').value; if(!a||!b) return alert('Doldur!'); list.push({a,b}); render(); document.getElementById('ad').value=''; document.getElementById('baha').value='';}
+function render(){let h=''; let j=0; list.forEach((x,i)=>{j+=x.b; h+=`<tr><td>${x.a}</td><td>${x.b} TMT</td><td><button onclick="list.splice(${i},1);render()">X</button></td></tr>`}); document.getElementById('sanaw').innerHTML=h; document.getElementById('jemTxt').innerText=`Jemi : ${j} TMT / Setirler : ${list.length}`; window.jemi=j; hasapla();}
+function hasapla(){let al=+document.getElementById('alnan').value||0; document.getElementById('gaytar').value=(al-(window.jemi||0))+' TMT';}
+</script>
+</body>
+</html>

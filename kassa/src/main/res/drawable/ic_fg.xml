@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Kassa apparaty -->
+    <path android:fillColor="#FFFFFF" android:pathData="M32,52 L76,52 L80,74 L28,74 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M40,36 L68,36 L68,48 L40,48 Z" />
+    <path android:fillColor="#1DA237" android:pathData="M43,39 L65,39 L65,45 L43,45 Z" />
+    <path android:fillColor="#1DA237" android:pathData="M38,58h6v4h-6zM48,58h6v4h-6zM58,58h6v4h-6zM38,65h6v4h-6zM48,65h6v4h-6zM58,65h12v4h-12z" />
+</vector>

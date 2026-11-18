@@ -20,7 +20,7 @@ jobs:
         run: |
           chmod +x gradlew
           set -o pipefail
-          ./gradlew :desktop:test :android:assembleRelease :keygen-android:assembleRelease :sniker:assembleRelease --no-daemon --stacktrace 2>&1 | tee build-android.log
+          ./gradlew :desktop:test :android:assembleRelease :keygen-android:assembleRelease :sniker:assembleRelease :kassa:assembleRelease --no-daemon --stacktrace 2>&1 | tee build-android.log
       - name: Faýllary taýýarla
         shell: bash
         run: |
@@ -28,6 +28,7 @@ jobs:
           cp android/build/outputs/apk/release/*.apk out/SowdaHasap.apk
           cp keygen/android/build/outputs/apk/release/*.apk out/SowdaHasap-Acar.apk
           cp sniker/build/outputs/apk/release/*.apk out/MeninSowdam-Sniker.apk
+          cp kassa/build/outputs/apk/release/*.apk out/KASSA.apk
       - uses: actions/upload-artifact@v4
         with: { name: android, path: out/ }
       - name: Ýalňyşlyk logy

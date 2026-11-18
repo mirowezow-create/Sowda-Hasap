@@ -12,6 +12,6 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "SowdaHasap"
-include(":android", ":desktop", ":keygen-android", ":keygen-desktop", ":sniker")
+include(":android", ":desktop", ":keygen-android", ":keygen-desktop", ":sniker", ":kassa")
 project(":keygen-android").projectDir = file("keygen/android")
 project(":keygen-desktop").projectDir = file("keygen/desktop")
