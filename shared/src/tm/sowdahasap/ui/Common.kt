@@ -42,6 +42,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -114,9 +119,20 @@ fun Field(
 ) {
     OutlinedTextField(
         value = value,
-        onValueChange = onChange,
+        onValueChange = { v ->
+            // Skanýer kodyň ahyryna Enter (\n, \r) goşýar — şony tutýarys
+            if (onDone != null && (v.contains('\n') || v.contains('\r'))) {
+                onChange(v.replace("\r", "").replace("\n", ""))
+                onDone()
+            } else onChange(v)
+        },
         label = { Text(label) },
-        modifier = modifier,
+        modifier = if (onDone == null) modifier else modifier.onPreviewKeyEvent { e ->
+            if (e.key == Key.Enter || e.key == Key.NumPadEnter) {
+                if (e.type == KeyEventType.KeyUp) onDone()
+                true
+            } else false
+        },
         colors = OutlinedTextFieldDefaults.colors(
             focusedContainerColor = Pal.FieldBg, unfocusedContainerColor = Pal.FieldBg, disabledContainerColor = Pal.FieldBg,
         ),

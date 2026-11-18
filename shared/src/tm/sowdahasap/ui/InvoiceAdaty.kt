@@ -270,16 +270,12 @@ fun InvoiceAdatyScreen(idArg: String, onTitle: (String) -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Row(Modifier.weight(1f).horizontalScroll(rememberScrollState())) {
                         ToolButton("➕", "Täze", { Tabs.open("invoice/new") })
-                        ToolButton("🖨", "Çek", print, enabled = lines.isNotEmpty())
-                        ToolButton("📄", "A4", {
-                            val html = InvoiceHtml.build(withCurrent().copy(total = total), lines.toList(), customer)
-                            Platform.shareFile("faktura_${cur.number}.html", "text/html", html.toByteArray(Charsets.UTF_8))
-                        }, enabled = lines.isNotEmpty())
+                        if (scan != null) ToolButton("📷", "Kamera", scan)
                         if (editable) {
+                            ToolButton("✅", "Tassykla", { tryPost() }, enabled = lines.isNotEmpty())
                             ToolButton("💾", "Garalama", {
                                 scope.launch { inv = Repo.saveDraft(withCurrent(), lines.toList()); show("Garalama saklandy") }
                             }, enabled = lines.isNotEmpty())
-                            ToolButton("✅", "Tassykla", { tryPost() }, enabled = lines.isNotEmpty())
                         } else {
                             if (cur.status == InvoiceStatus.POSTED && Session.role == Role.ADMIN)
                                 ToolButton("⛔", "Ýatyr", {
@@ -288,7 +284,11 @@ fun InvoiceAdatyScreen(idArg: String, onTitle: (String) -> Unit) {
                                     }
                                 })
                         }
-                        if (scan != null) ToolButton("📷", "Kamera", scan)
+                        ToolButton("🖨", "Çek", print, enabled = lines.isNotEmpty())
+                        ToolButton("📄", "A4", {
+                            val html = InvoiceHtml.build(withCurrent().copy(total = total), lines.toList(), customer)
+                            Platform.shareFile("faktura_${cur.number}.html", "text/html", html.toByteArray(Charsets.UTF_8))
+                        }, enabled = lines.isNotEmpty())
                     }
                     Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 8.dp)) {
                         BigTotal("${total.money()} TMT")
@@ -301,6 +301,7 @@ fun InvoiceAdatyScreen(idArg: String, onTitle: (String) -> Unit) {
                 // Ştrihkod / Ady / Müşderi / Alynan pul
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Field(barcode, { barcode = it }, "Ştrihkod", modifier = Modifier.weight(1f).focusRequester(barcodeFocus),
+                        trailing = if (scan != null) ({ IconText("📷", scan) }) else null,
                         onDone = {
                             val c = barcode.trim(); barcode = ""
                             if (c.isNotEmpty()) scope.launch { onBarcode(c) }
