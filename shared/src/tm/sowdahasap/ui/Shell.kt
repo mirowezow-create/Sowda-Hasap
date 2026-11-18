@@ -299,18 +299,22 @@ private fun StartTiles() {
         Triple("📋", "Fakturalar", "invoices").takeIf { Session.can(Perm.SALES) },
         Triple("📊", "Hasabatlar", "reports").takeIf { Session.can(Perm.REPORTS) },
     )
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Text("${Session.user?.name} · ${Session.role?.title}", color = Pal.TabActive, fontSize = 18.sp)
-        Spacer(Modifier.height(16.dp))
-        tiles.chunked(3).forEach { rowTiles ->
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 12.dp)) {
-                rowTiles.forEach { (icon, title, route) ->
-                    Column(Modifier.size(width = 150.dp, height = 110.dp).background(Color(0xEEFFFFFF), RoundedCornerShape(6.dp))
-                        .border(1.dp, Color(0x22000000), RoundedCornerShape(6.dp)).clickable { Tabs.open(route) },
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                        Text(icon, fontSize = 34.sp)
-                        Text(title, fontSize = 14.sp, color = Pal.Text)
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+        val perRow = ((maxWidth - 32.dp) / 162.dp).toInt().coerceIn(1, 3)
+        val tileW = ((maxWidth - 32.dp) / perRow - 12.dp).coerceAtMost(160.dp)
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Text("${Session.user?.name} · ${Session.role?.title}", color = Pal.TabActive, fontSize = 18.sp)
+            Spacer(Modifier.height(16.dp))
+            tiles.chunked(perRow).forEach { rowTiles ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 12.dp)) {
+                    rowTiles.forEach { (icon, title, route) ->
+                        Column(Modifier.size(width = tileW, height = 110.dp).background(Color(0xEEFFFFFF), RoundedCornerShape(6.dp))
+                            .border(1.dp, Color(0x22000000), RoundedCornerShape(6.dp)).clickable { Tabs.open(route) },
+                            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                            Text(icon, fontSize = 34.sp)
+                            Text(title, fontSize = 14.sp, color = Pal.Text, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                        }
                     }
                 }
             }

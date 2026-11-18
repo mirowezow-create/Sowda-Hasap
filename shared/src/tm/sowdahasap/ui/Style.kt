@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -77,7 +78,7 @@ object Pal {
 /** Ýaşyl-krem nagyşly fon */
 @Composable
 fun PatternBackground(modifier: Modifier = Modifier.fillMaxSize(), content: @Composable BoxScope.() -> Unit) {
-    Box(modifier) {
+    Box(modifier.clipToBounds()) {
         Canvas(Modifier.fillMaxSize()) {
             drawRect(Color(0xFFE9F5E6))
             val r = 34.dp.toPx()
