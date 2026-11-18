@@ -266,7 +266,7 @@ fun InvoiceAdatyScreen(idArg: String, onTitle: (String) -> Unit) {
         val wide = maxWidth > 900.dp
         Row(Modifier.fillMaxSize()) {
             // ---------- Çep: esasy bölek ----------
-            Column(Modifier.weight(1f).fillMaxHeight().padding(8.dp)) {
+            Column(Modifier.weight(1f).fillMaxHeight().let { if (wide) it else it.verticalScroll(rememberScrollState()) }.padding(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Row(Modifier.weight(1f).horizontalScroll(rememberScrollState())) {
                         ToolButton("➕", "Täze", { Tabs.open("invoice/new") })
@@ -291,7 +291,8 @@ fun InvoiceAdatyScreen(idArg: String, onTitle: (String) -> Unit) {
                         }, enabled = lines.isNotEmpty())
                     }
                     Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 8.dp)) {
-                        BigTotal("${total.money()} TMT")
+                        if (wide) BigTotal("${total.money()} TMT")
+                        else Text("${total.money()} TMT", fontSize = 24.sp, fontWeight = FontWeight.Light)
                         if (!editable) Text(InvoiceStatus.title(cur.status), color = if (cur.status == InvoiceStatus.POSTED)
                             Color(0xFF1B7F3A) else Pal.RedX, fontWeight = FontWeight.Bold)
                         else if (isNightNow() && !cur.wholesale && cur.kind == InvoiceKind.SALE) Text("🌙 Gijeki baha", color = Pal.Muted)
@@ -332,7 +333,7 @@ fun InvoiceAdatyScreen(idArg: String, onTitle: (String) -> Unit) {
                     onChange = { idx, l -> lines[idx] = l },
                     onRemove = { idx -> lines.removeAt(idx); selected = -1 },
                     unitPriceFor = { p, u -> unitPrice(p, u, cur) },
-                    modifier = Modifier.weight(1f))
+                    modifier = if (wide) Modifier.weight(1f) else Modifier)
             }
             // ---------- Sag panel ----------
             if (wide) WhitePanel(Modifier.width(310.dp).fillMaxHeight().padding(4.dp)) {
@@ -440,8 +441,7 @@ private fun LinesTable(
     else listOf(Col("Haryt", 2.2f), Col("Sany", 1f, TextAlign.End), Col("Baha", 1.2f, TextAlign.End), Col("Ölçeg", 1f, TextAlign.Center))
     Column(modifier.fillMaxWidth().background(Color(0xEEFFFFFF)).border(1.dp, Color(0x33000000))) {
         TableHeader(cols, lead = if (editable) 34 else 0)
-        LazyColumn(Modifier.fillMaxSize()) {
-            itemsIndexed(lines, key = { _, l -> l.id }) { idx, l ->
+        val rowContent: @Composable (Int, InvoiceLine) -> Unit = { idx, l ->
                 val p = products[l.productId]
                 TableRow(idx, selected = idx == selected, onClick = { onSelect(idx) }) {
                     if (editable) Box(Modifier.width(34.dp)) { RedX({ onRemove(idx) }) }
@@ -459,7 +459,13 @@ private fun LinesTable(
                     }
                     if (wide) Cell("1 ${l.unitName.ifBlank { p?.unit ?: "" }} = ${l.factor.qty()} ${p?.unit ?: ""}", 1.5f, color = Pal.Muted)
                 }
-            }
+        }
+        if (wide) LazyColumn(Modifier.fillMaxSize()) {
+            itemsIndexed(lines, key = { _, l -> l.id }) { idx, l -> rowContent(idx, l) }
+        } else {
+            // Telefonda: ähli setirler sahypa bilen bilelikde süýşýär
+            lines.forEachIndexed { idx, l -> androidx.compose.runtime.key(l.id) { rowContent(idx, l) } }
+            if (lines.isEmpty()) Text("Haryt ýok — ştrihkod okadyň ýa-da ady bilen gözläň", Modifier.padding(12.dp), color = Pal.Muted)
         }
     }
 }
